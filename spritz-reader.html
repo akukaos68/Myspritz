@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spritz Reader</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #0c0c0f;
+    --surface: #13131a;
+    --surface2: #1c1c27;
+    --border: #2a2a3d;
+    --accent: #e8003d;
+    --accent2: #ff6b6b;
+    --text: #e8e8f0;
+    --text-dim: #6b6b88;
+    --green: #00e5a0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* Noise overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  header {
+    width: 100%;
+    max-width: 900px;
+    padding: 40px 24px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 52px;
+    letter-spacing: 4px;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .logo span {
+    color: var(--accent);
+  }
+
+  .tagline {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding-bottom: 4px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 900px;
+    padding: 32px 24px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--accent);
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--surface2);
+  }
+
+  .upload-icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .upload-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 3px;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+
+  .upload-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+
+  #file-input { display: none; }
+
+  .file-loaded {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green);
+    border-radius: 2px;
+    font-size: 12px;
+    color: var(--green);
+    display: none;
+  }
+
+  .file-loaded .fname { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-loaded .wcount { color: var(--text-dim); font-size: 11px; }
+
+  /* Controls bar */
+  .controls-bar {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 16px;
+    align-items: center;
+    padding: 20px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+  }
+
+  .wpm-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .wpm-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .wpm-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .wpm-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    color: var(--accent);
+    line-height: 1;
+    min-width: 72px;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 200px;
+    height: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 12px 24px;
+    border: 1px solid;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: transparent;
+  }
+
+  .btn-primary {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    border-color: var(--border);
+    color: var(--text-dim);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--text);
+    color: var(--text);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.2;
+    cursor: not-allowed;
+  }
+
+  .btn-stop {
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+
+  .btn-stop:hover {
+    background: var(--accent2);
+    color: #fff;
+  }
+
+  /* Reader display */
+  .reader-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 64px 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    position: relative;
+    overflow: hidden;
+    min-height: 240px;
+  }
+
+  .reader-panel::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(to bottom, transparent, var(--border) 30%, var(--border) 70%, transparent);
+    pointer-events: none;
+  }
+
+  .word-display {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 80px;
+  }
+
+  .word-container {
+    display: flex;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 52px;
+    font-weight: 300;
+    letter-spacing: 2px;
+    line-height: 1;
+  }
+
+  .word-before { color: var(--text); }
+  .word-pivot  { color: var(--accent); font-weight: 600; position: relative; }
+  .word-pivot::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 6px;
+    background: var(--accent);
+  }
+  .word-after  { color: var(--text); }
+
+  .placeholder-text {
+    font-size: 14px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  /* Pivot guide lines */
+  .guide-lines {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    pointer-events: none;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* Progress bar */
+  .progress-bar-wrap {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+
+  .progress-track {
+    width: 100%;
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(to right, var(--accent), var(--accent2));
+    border-radius: 1px;
+    transition: width 0.1s linear;
+    width: 0%;
+  }
+
+  /* Status badge */
+  .status-badge {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 1px;
+    display: none;
+  }
+
+  .status-badge.playing {
+    display: block;
+    background: rgba(0, 229, 160, 0.1);
+    color: var(--green);
+    border: 1px solid rgba(0, 229, 160, 0.3);
+    animation: blink 1.5s ease-in-out infinite;
+  }
+
+  .status-badge.paused {
+    display: block;
+    background: rgba(232, 0, 61, 0.1);
+    color: var(--accent2);
+    border: 1px solid rgba(232, 0, 61, 0.3);
+  }
+
+  .status-badge.done {
+    display: block;
+    background: rgba(0, 229, 160, 0.1);
+    color: var(--green);
+    border: 1px solid rgba(0, 229, 160, 0.3);
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Context panel */
+  .context-panel {
+    position: absolute;
+    bottom: 20px;
+    left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-dim);
+    overflow: hidden;
+    padding: 0 40px;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .ctx-word { transition: all 0.15s; }
+
+  .flash {
+    animation: wordFlash 0.1s ease-out;
+  }
+
+  @keyframes wordFlash {
+    0% { opacity: 0; transform: scale(0.85); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Footer hint */
+  .hint {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    text-align: center;
+    opacity: 0.5;
+  }
+
+  kbd {
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+
+  /* Fullscreen button */
+  .btn-fullscreen {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-size: 14px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    z-index: 10;
+  }
+  .btn-fullscreen:hover {
+    border-color: var(--text);
+    color: var(--text);
+  }
+
+  /* Fullscreen mode styles */
+  .reader-panel:fullscreen,
+  .reader-panel:-webkit-full-screen {
+    background: var(--bg);
+    border: none;
+    border-radius: 0;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 48px;
+    padding: 40px 32px;
+  }
+
+  .reader-panel:fullscreen .word-container,
+  .reader-panel:-webkit-full-screen .word-container {
+    font-size: 72px;
+  }
+
+  .reader-panel:fullscreen .progress-bar-wrap,
+  .reader-panel:-webkit-full-screen .progress-bar-wrap {
+    width: 80%;
+    max-width: 500px;
+  }
+
+  /* Fullscreen mini controls */
+  .fs-controls {
+    display: none;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .reader-panel:fullscreen .fs-controls,
+  .reader-panel:-webkit-full-screen .fs-controls {
+    display: flex;
+  }
+
+  .fs-wpm {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    color: var(--accent);
+    min-width: 60px;
+    text-align: center;
+  }
+
+  .fs-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    text-align: center;
+    margin-top: 2px;
+  }
+
+  .fs-slider {
+    -webkit-appearance: none;
+    width: 160px;
+    height: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  .fs-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .fs-slider::-moz-range-thumb {
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .fs-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    border: 1px solid;
+    border-radius: 2px;
+    cursor: pointer;
+    background: transparent;
+    transition: all 0.15s;
+  }
+  .fs-btn-play  { border-color: var(--accent);  color: var(--accent); }
+  .fs-btn-play:hover  { background: var(--accent);  color: #fff; }
+  .fs-btn-pause { border-color: var(--accent2); color: var(--accent2); }
+  .fs-btn-pause:hover { background: var(--accent2); color: #fff; }
+  .fs-btn-exit  { border-color: var(--border);  color: var(--text-dim); }
+  .fs-btn-exit:hover  { border-color: var(--text); color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">SPR<span>I</span>TZ</div>
+  <div class="tagline">Speed Reader — PDF Edition</div>
+</header>
+
+<div class="container">
+
+  <!-- Upload zone -->
+  <div class="upload-zone" id="drop-zone">
+    <span class="upload-icon">⬆</span>
+    <div class="upload-title">Cargar PDF</div>
+    <div class="upload-sub">Arrastrá el archivo o hacé clic para seleccionarlo</div>
+    <input type="file" id="file-input" accept=".pdf">
+  </div>
+
+  <div class="file-loaded" id="file-info">
+    ✓ &nbsp;<span class="fname" id="fname">—</span>
+    <span class="wcount" id="wcount">— palabras</span>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls-bar">
+    <div class="wpm-group">
+      <div class="wpm-label">Palabras por minuto</div>
+      <div class="wpm-row">
+        <div class="wpm-value" id="wpm-display">250</div>
+        <input type="range" id="wpm-slider" min="60" max="800" step="10" value="250">
+      </div>
+    </div>
+    <button class="btn btn-secondary" id="btn-restart" disabled>↺ Reiniciar</button>
+    <button class="btn btn-primary" id="btn-play" disabled>▶ Iniciar</button>
+    <button class="btn btn-stop" id="btn-stop" disabled style="display:none">■ Pausar</button>
+  </div>
+
+  <!-- Reader -->
+  <div class="reader-panel" id="reader-panel">
+    <button class="btn-fullscreen" id="btn-fullscreen" title="Pantalla completa">⛶</button>
+    <div class="status-badge" id="status-badge">●&nbsp; LEYENDO</div>
+
+    <div class="word-display" id="word-display">
+      <div class="placeholder-text" id="placeholder">Cargá un PDF para comenzar</div>
+      <div class="word-container" id="word-container" style="display:none">
+        <span class="word-before" id="word-before"></span>
+        <span class="word-pivot"  id="word-pivot"></span>
+        <span class="word-after"  id="word-after"></span>
+      </div>
+    </div>
+
+    <div class="progress-bar-wrap" id="progress-wrap" style="display:none">
+      <div class="progress-meta">
+        <span id="prog-current">0</span>
+        <span id="prog-eta"></span>
+        <span id="prog-total">0</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Mini controls visible only in fullscreen -->
+    <div class="fs-controls" id="fs-controls">
+      <div>
+        <div class="fs-wpm" id="fs-wpm-display">250</div>
+        <div class="fs-label">wpm</div>
+      </div>
+      <input type="range" class="fs-slider" id="fs-wpm-slider" min="60" max="800" step="10" value="250">
+      <button class="fs-btn fs-btn-play"  id="fs-btn-play">▶ Iniciar</button>
+      <button class="fs-btn fs-btn-pause" id="fs-btn-pause" style="display:none">■ Pausar</button>
+      <button class="fs-btn fs-btn-exit"  id="fs-btn-exit">✕ Salir</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    <kbd>Space</kbd> Pausar / Reanudar &nbsp;&nbsp; <kbd>←</kbd> Retroceder &nbsp;&nbsp; <kbd>→</kbd> Avanzar &nbsp;&nbsp; <kbd>↑↓</kbd> Velocidad
+  </div>
+
+</div>
+
+<script>
+  // PDF.js setup
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  let words = [];
+  let currentIndex = 0;
+  let isPlaying = false;
+  let timer = null;
+  let wpm = 250;
+
+  const dropZone    = document.getElementById('drop-zone');
+  const fileInput   = document.getElementById('file-input');
+  const fileInfo    = document.getElementById('file-info');
+  const fnameEl     = document.getElementById('fname');
+  const wcountEl    = document.getElementById('wcount');
+  const wpmSlider   = document.getElementById('wpm-slider');
+  const wpmDisplay  = document.getElementById('wpm-display');
+  const btnPlay     = document.getElementById('btn-play');
+  const btnStop     = document.getElementById('btn-stop');
+  const btnRestart  = document.getElementById('btn-restart');
+  const placeholder = document.getElementById('placeholder');
+  const wordContainer = document.getElementById('word-container');
+  const wordBefore  = document.getElementById('word-before');
+  const wordPivot   = document.getElementById('word-pivot');
+  const wordAfter   = document.getElementById('word-after');
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressFill = document.getElementById('progress-fill');
+  const progCurrent = document.getElementById('prog-current');
+  const progTotal   = document.getElementById('prog-total');
+  const progEta     = document.getElementById('prog-eta');
+  const statusBadge = document.getElementById('status-badge');
+
+  // WPM slider (main)
+  wpmSlider.addEventListener('input', () => {
+    wpm = parseInt(wpmSlider.value);
+    wpmDisplay.textContent = wpm;
+    fsWpmSlider.value = wpm;
+    fsWpmDisplay.textContent = wpm;
+    if (isPlaying) {
+      clearInterval(timer);
+      startTimer();
+    }
+  });
+
+  // File input
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) loadPDF(e.target.files[0]);
+  });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') loadPDF(file);
+  });
+
+  async function loadPDF(file) {
+    placeholder.textContent = 'Procesando PDF…';
+    wordContainer.style.display = 'none';
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      fullText += pageText + ' ';
+    }
+
+    // Tokenize into words, removing empty strings
+    words = fullText
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .filter(w => w.length > 0);
+
+    currentIndex = 0;
+    isPlaying = false;
+    clearInterval(timer);
+
+    // Update UI
+    fnameEl.textContent = file.name;
+    wcountEl.textContent = `${words.length.toLocaleString()} palabras`;
+    fileInfo.style.display = 'flex';
+    placeholder.style.display = 'none';
+    wordContainer.style.display = 'flex';
+    progressWrap.style.display = 'flex';
+    btnPlay.disabled = false;
+    btnRestart.disabled = false;
+    btnStop.style.display = 'none';
+    btnPlay.style.display = '';
+    setStatus('');
+
+    showWord(0);
+    updateProgress();
+  }
+
+  // Spritz ORP (Optimal Recognition Point) algorithm
+  function getORP(word) {
+    const len = word.length;
+    if (len === 1)  return 0;
+    if (len <= 5)   return 1;
+    if (len <= 9)   return 2;
+    if (len <= 13)  return 3;
+    return 4;
+  }
+
+  function showWord(idx) {
+    if (!words.length) return;
+    idx = Math.max(0, Math.min(idx, words.length - 1));
+    currentIndex = idx;
+
+    const raw = words[idx];
+    // Strip punctuation only for display splitting, keep original
+    const word = raw;
+    const orp = getORP(word);
+
+    wordBefore.textContent = word.slice(0, orp);
+    wordPivot.textContent  = word[orp] || '';
+    wordAfter.textContent  = word.slice(orp + 1);
+
+    // Flash animation
+    wordContainer.classList.remove('flash');
+    void wordContainer.offsetWidth;
+    wordContainer.classList.add('flash');
+
+    updateProgress();
+  }
+
+  function updateProgress() {
+    if (!words.length) return;
+    const pct = ((currentIndex + 1) / words.length * 100).toFixed(1);
+    progressFill.style.width = pct + '%';
+    progCurrent.textContent = currentIndex + 1;
+    progTotal.textContent = words.length;
+
+    const remaining = words.length - currentIndex - 1;
+    const mins = Math.ceil(remaining / wpm);
+    if (mins <= 0) {
+      progEta.textContent = '';
+    } else if (mins === 1) {
+      progEta.textContent = '~1 min restante';
+    } else {
+      progEta.textContent = `~${mins} min restantes`;
+    }
+  }
+
+  function startTimer() {
+    const interval = Math.floor(60000 / wpm);
+    timer = setInterval(() => {
+      if (currentIndex >= words.length - 1) {
+        pause();
+        setStatus('done');
+        statusBadge.textContent = '✓  TERMINADO';
+        return;
+      }
+      currentIndex++;
+      showWord(currentIndex);
+    }, interval);
+  }
+
+  function play() {
+    if (!words.length) return;
+    isPlaying = true;
+    btnPlay.style.display = 'none';
+    btnStop.style.display = '';
+    setStatus('playing');
+    startTimer();
+  }
+
+  function pause() {
+    isPlaying = false;
+    clearInterval(timer);
+    btnStop.style.display = 'none';
+    btnPlay.style.display = '';
+    if (currentIndex < words.length - 1) setStatus('paused');
+  }
+
+  function setStatus(state) {
+    statusBadge.className = 'status-badge';
+    if (state === 'playing') {
+      statusBadge.classList.add('playing');
+      statusBadge.textContent = '●  LEYENDO';
+    } else if (state === 'paused') {
+      statusBadge.classList.add('paused');
+      statusBadge.textContent = '⏸  PAUSADO';
+    } else if (state === 'done') {
+      statusBadge.classList.add('done');
+    }
+  }
+
+  btnPlay.addEventListener('click', play);
+  btnStop.addEventListener('click', pause);
+  btnRestart.addEventListener('click', () => {
+    pause();
+    currentIndex = 0;
+    showWord(0);
+    setStatus('');
+  });
+
+  // Fullscreen
+  const readerPanel   = document.getElementById('reader-panel');
+  const btnFullscreen = document.getElementById('btn-fullscreen');
+  const fsBtnPlay     = document.getElementById('fs-btn-play');
+  const fsBtnPause    = document.getElementById('fs-btn-pause');
+  const fsBtnExit     = document.getElementById('fs-btn-exit');
+  const fsWpmSlider   = document.getElementById('fs-wpm-slider');
+  const fsWpmDisplay  = document.getElementById('fs-wpm-display');
+
+  function syncFsButtons() {
+    fsBtnPlay.style.display  = isPlaying ? 'none' : '';
+    fsBtnPause.style.display = isPlaying ? '' : 'none';
+  }
+
+  btnFullscreen.addEventListener('click', () => {
+    if (readerPanel.requestFullscreen) readerPanel.requestFullscreen();
+    else if (readerPanel.webkitRequestFullscreen) readerPanel.webkitRequestFullscreen();
+    syncFsButtons();
+  });
+
+  fsBtnExit.addEventListener('click', () => {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  });
+
+  fsBtnPlay.addEventListener('click',  () => { play();  syncFsButtons(); });
+  fsBtnPause.addEventListener('click', () => { pause(); syncFsButtons(); });
+
+  fsWpmSlider.addEventListener('input', () => {
+    wpm = parseInt(fsWpmSlider.value);
+    wpmSlider.value = wpm;
+    wpmDisplay.textContent = wpm;
+    fsWpmDisplay.textContent = wpm;
+    if (isPlaying) { clearInterval(timer); startTimer(); }
+  });
+
+  // Keyboard controls
+  document.addEventListener('keydown', e => {
+    if (!words.length) return;
+    if (e.code === 'Space') { e.preventDefault(); isPlaying ? pause() : play(); }
+    if (e.code === 'ArrowRight') { pause(); showWord(currentIndex + 1); }
+    if (e.code === 'ArrowLeft')  { pause(); showWord(currentIndex - 1); }
+    if (e.code === 'ArrowUp')    { wpmSlider.value = Math.min(800, wpm + 10); wpmSlider.dispatchEvent(new Event('input')); }
+    if (e.code === 'ArrowDown')  { wpmSlider.value = Math.max(60, wpm - 10);  wpmSlider.dispatchEvent(new Event('input')); }
+  });
+</script>
+</body>
+</html>
